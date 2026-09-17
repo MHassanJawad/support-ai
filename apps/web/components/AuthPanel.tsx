@@ -224,6 +224,11 @@ export function AuthPanel({ mode, role }: AuthPanelProps) {
         return;
       }
 
+      if (result.data.user?.identities?.length === 0) {
+        setFeedback({ tone: "error", text: "This email may already be registered. Sign in or use Forgot password to recover your account." });
+        return;
+      }
+
       setPassword("");
       setConfirmPassword("");
       setPendingEmail(normalizedEmail);
@@ -278,7 +283,7 @@ export function AuthPanel({ mode, role }: AuthPanelProps) {
             <p className="mt-4 max-w-lg text-base leading-7 text-muted">{copy.body}</p>
           </div>
           <div className="grid gap-3 text-sm text-muted sm:grid-cols-3 lg:grid-cols-1">
-            <TrustItem icon={<ShieldCheck className="h-4 w-4" />} label="Secure Supabase sessions" />
+            <TrustItem icon={<ShieldCheck className="h-4 w-4" />} label="Secure account access" />
             <TrustItem
               icon={isBusiness ? <Building2 className="h-4 w-4" /> : <Users className="h-4 w-4" />}
               label={isBusiness ? "Business owner access" : "Customer dashboard"}

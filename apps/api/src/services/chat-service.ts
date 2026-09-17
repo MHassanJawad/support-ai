@@ -4,6 +4,7 @@ import { supabaseAdmin } from "../config/supabase";
 import { AppError, NotFoundError } from "../errors/app-error";
 import { aiProvider } from "./ai-provider";
 import { retrieveRelevantChunks } from "./document-service";
+import { listFaqs } from "./faq-service";
 
 export async function createConversation(input: CreateConversationInput, businessId: string) {
   const { data, error } = await supabaseAdmin
@@ -59,35 +60,51 @@ export async function getConversation(conversationId: string, businessId: string
 
 export async function answerMessage(conversationId: string, businessId: string, content: string) {
   const startedAt = Date.now();
-  await getConversation(conversationId, businessId);
-
-  const { error: customerMessageError } = await supabaseAdmin.from("messages").insert({
-    business_id: businessId,
-    conversation_id: conversationId,
-    sender: "customer",
-    content
-  });
-
-  if (customerMessageError) {
-    throw new AppError("DATABASE_ERROR", "Could not persist customer message.", 500);
-  }
-
-  const sources = await retrieveRelevantChunks(businessId, content);
-  const answer = await aiProvider.generateAnswer(content, sources);
+  const conversation = await getConversation(conversationId, businessId);
+  const recentMessages = (conversation.messages ?? []).slice(-8) as Array<{ sender: string; content: string }>;
+  const history = recentMessages.map((message) => `${message.sender}: ${message.content.slice(0, 2000)}`).join("\n");
+  const previousQuestion = [...recentMessages].reverse().find((message) => message.sender === "customer")?.content;
+  const retrievalQuery = previousQuestion ? `${previousQuestion.slice(0, 1000)}\n${content}` : content;
+  const [documentSources, faqs] = await Promise.all([retrieveRelevantChunks(businessId, retrievalQuery), listFaqs(businessId)]);
+  const words = new Set(retrievalQuery.toLowerCase().match(/\p{L}{3,}/gu) ?? []);
+  const faqSources = (faqs ?? []).map((faq) => ({
+    documentId: faq.id as string, chunkId: faq.id as string,
+    documentName: `FAQ: ${faq.question}`, excerpt: `${faq.question}\n${faq.answer}`,
+    score: [...words].filter((word) => `${faq.question} ${faq.answer}`.toLowerCase().includes(word)).length / Math.max(words.size, 1)
+  })).filter((faq) => faq.score > 0).sort((a, b) => b.score - a.score).slice(0, 5);
+  const sources = [...documentSources, ...faqSources];
+  const answer = sources.length ? await aiProvider.generateAnswer(content, sources, history)
+    : "I'm unable to confirm that detail right now. Please contact the business directly for the most accurate information.";
 
   const { data: assistantMessage, error: assistantMessageError } = await supabaseAdmin
     .from("messages")
-    .insert({
+    .insert([{
+      business_id: businessId,
+      conversation_id: conversationId,
+      sender: "customer",
+      content,
+      metadata: {}
+    }, {
       business_id: businessId,
       conversation_id: conversationId,
       sender: "assistant",
       content: answer,
       metadata: { sources }
-    })
-    .select("*")
-    .single();
+    }])
+    .select("*");
 
   if (assistantMessageError || !assistantMessage) {
+    console.error(JSON.stringify({
+      level: "error",
+      message: "Could not persist chat messages",
+      businessId,
+      conversationId,
+      supabaseError: assistantMessageError ? {
+        code: assistantMessageError.code,
+        message: assistantMessageError.message,
+        details: assistantMessageError.details
+      } : null
+    }));
     throw new AppError("DATABASE_ERROR", "Could not persist assistant message.", 500);
   }
 
@@ -103,7 +120,7 @@ export async function answerMessage(conversationId: string, businessId: string, 
 
   return {
     conversationId,
-    messageId: assistantMessage.id,
+    messageId: assistantMessage.find((message) => message.sender === "assistant")!.id,
     answer,
     sources
   };

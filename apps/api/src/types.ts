@@ -3,6 +3,7 @@ export interface AuthContext {
   userId: string;
   email?: string;
   businessId?: string;
+  role?: string;
 }
 
 export interface RequestContext {

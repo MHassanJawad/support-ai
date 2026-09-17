@@ -16,10 +16,11 @@ Deploy `apps/api` to Render as a Node service. Configure all API variables from 
 ## Supabase
 
 1. Create a Supabase project.
-2. Run `db/migrations/001_initial_schema.sql`.
+2. Run all outstanding files in `db/migrations` in numeric order (001, 002, 003).
 3. Create storage bucket `knowledge-base`.
 4. Copy project URL, anon key, and service role key into deployment secrets.
 
 ## Smoke Test
 
-Register, create a business, upload a TXT file, ask a question, and confirm analytics increments.
+Run `pnpm verify:services`, then the staging walkthrough in [DEMO_READINESS.md](DEMO_READINESS.md).
+Use Node 22.12+ for both builds and the API runtime.

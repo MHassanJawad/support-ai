@@ -1,7 +1,7 @@
 // Main authenticated business dashboard for documents, FAQs, chat, and analytics.
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import {
   BarChart3,
@@ -17,7 +17,8 @@ import {
   PanelLeftOpen,
   Plus,
   RefreshCw,
-  Settings,
+  Pencil,
+  Trash2,
   UploadCloud,
   X
 } from "lucide-react";
@@ -58,6 +59,7 @@ interface FaqRow {
 }
 
 interface AnalyticsSummary {
+  dailyUsage: Record<string, number>;
   totalQueries: number;
   averageResponseTimeMs: number;
   mostAskedQuestions: Array<{ question: string; count: number }>;
@@ -71,14 +73,15 @@ interface ChatSource {
   excerpt: string;
 }
 
-type ActionName = "refresh" | "business" | "upload" | "faq" | "chat";
+type ActionName = "refresh" | "business" | "upload" | "faq" | "chat" | "delete";
 
 const navItems = [
-  { label: "Dashboard Overview", icon: <LayoutDashboard className="h-4 w-4" /> },
-  { label: "My Business Profile", icon: <Building2 className="h-4 w-4" /> },
-  { label: "Document Manager", icon: <FileText className="h-4 w-4" /> },
-  { label: "Chat Analytics", icon: <BarChart3 className="h-4 w-4" /> },
-  { label: "Settings", icon: <Settings className="h-4 w-4" /> }
+  { label: "Overview", id: "overview", icon: <LayoutDashboard className="h-4 w-4" /> },
+  { label: "Business profile", id: "business-profile", icon: <Building2 className="h-4 w-4" /> },
+  { label: "Documents", id: "documents", icon: <FileText className="h-4 w-4" /> },
+  { label: "FAQs", id: "faqs", icon: <MessageSquare className="h-4 w-4" /> },
+  { label: "Analytics & chat", id: "analytics", icon: <BarChart3 className="h-4 w-4" /> },
+  { label: "Conversations", id: "conversations", icon: <MessageSquare className="h-4 w-4" /> }
 ];
 
 export function Dashboard() {
@@ -96,6 +99,15 @@ export function Dashboard() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
+  const [activeSection, setActiveSection] = useState("overview");
+  const [editingBusiness, setEditingBusiness] = useState(false);
+  const [editingFaq, setEditingFaq] = useState<FaqRow | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ kind: "documents" | "faqs"; id: string; name: string } | null>(null);
+  const [conversations, setConversations] = useState<Array<{ id: string; title: string; messages: Array<{ id: string; sender: string; content: string; created_at: string }> }>>([]);
+  const fileInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (pendingDelete || error) window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [pendingDelete, error]);
 
   useEffect(() => {
     const stored = window.localStorage.getItem("supportai-sidebar-collapsed");
@@ -132,14 +144,16 @@ export function Dashboard() {
         return;
       }
 
-      const [documentData, faqData, analyticsData] = await Promise.all([
+      const [documentData, faqData, analyticsData, conversationData] = await Promise.all([
         apiRequest<DocumentRow[]>("/api/v1/documents"),
         apiRequest<FaqRow[]>("/api/v1/faqs"),
-        apiRequest<AnalyticsSummary>("/api/v1/analytics/summary")
+        apiRequest<AnalyticsSummary>("/api/v1/analytics/summary"),
+        apiRequest<typeof conversations>("/api/v1/chat/conversations")
       ]);
       setDocuments(documentData);
       setFaqs(faqData);
       setAnalytics(analyticsData);
+      setConversations(conversationData);
       if (!options.silent) {
         setNotice("Dashboard refreshed.");
       }
@@ -158,7 +172,7 @@ export function Dashboard() {
 
   async function createBusiness(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (busyAction || activeBusiness) {
+    if (busyAction || (activeBusiness && !editingBusiness)) {
       return;
     }
 
@@ -178,12 +192,13 @@ export function Dashboard() {
     setNotice("");
 
     try {
-      await apiRequest("/api/v1/businesses", {
-        method: "POST",
+      await apiRequest(activeBusiness ? "/api/v1/businesses/current" : "/api/v1/businesses", {
+        method: activeBusiness ? "PATCH" : "POST",
         body: JSON.stringify({ name, industry, address })
       });
       formElement.reset();
-      setNotice(`${name} was created successfully.`);
+      setNotice(`${name} was saved successfully.`);
+      setEditingBusiness(false);
       await refresh({ silent: true });
     } catch (createError) {
       setError(getErrorMessage(createError));
@@ -200,8 +215,13 @@ export function Dashboard() {
 
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
-    if (!form.get("file")) {
+    const selectedFile = form.get("file");
+    if (!(selectedFile instanceof File) || !selectedFile.size) {
       setError("Choose a PDF or TXT file before uploading.");
+      return;
+    }
+    if (selectedFile.size > 10 * 1024 * 1024 || !/\.(pdf|txt)$/i.test(selectedFile.name)) {
+      setError("Choose a PDF or TXT file up to 10 MB.");
       return;
     }
 
@@ -212,9 +232,10 @@ export function Dashboard() {
     try {
       await apiRequest("/api/v1/documents", { method: "POST", body: form });
       formElement.reset();
-      setNotice("Document uploaded and queued for processing.");
+      setNotice("Document is ready to answer customer questions.");
       await refresh({ silent: true });
     } catch (uploadError) {
+      await refresh({ silent: true });
       setError(getErrorMessage(uploadError));
     } finally {
       setBusyAction(null);
@@ -243,12 +264,13 @@ export function Dashboard() {
     setNotice("");
 
     try {
-      await apiRequest("/api/v1/faqs", {
-        method: "POST",
+      await apiRequest(editingFaq ? `/api/v1/faqs/${editingFaq.id}` : "/api/v1/faqs", {
+        method: editingFaq ? "PATCH" : "POST",
         body: JSON.stringify({ question: faqQuestion, answer: faqAnswer })
       });
       formElement.reset();
-      setNotice("FAQ added.");
+      setNotice(editingFaq ? "FAQ updated." : "FAQ added.");
+      setEditingFaq(null);
       await refresh({ silent: true });
     } catch (faqError) {
       setError(getErrorMessage(faqError));
@@ -312,14 +334,26 @@ export function Dashboard() {
     window.localStorage.setItem("supportai-sidebar-collapsed", String(next));
   }
 
+  async function confirmDelete() {
+    if (!pendingDelete || busyAction) return;
+    setBusyAction("delete");
+    setError("");
+    setNotice("");
+    try {
+      await apiRequest(`/api/v1/${pendingDelete.kind}/${pendingDelete.id}`, { method: "DELETE" });
+      setPendingDelete(null);
+      await refresh({ silent: true });
+      setNotice("Deleted successfully.");
+    } catch (failure) { setError(getErrorMessage(failure)); }
+    finally { setBusyAction(null); }
+  }
+
   const isWorkspaceLocked = !activeBusiness;
   const supportPath = activeBusiness ? `/support/${activeBusiness.id}` : "";
   const readyDocs = documents.filter((document) => document.status === "ready").length;
 
   return (
     <main className="min-h-screen bg-mist text-ink">
-      <StatusToast message={notice} tone="success" />
-      <StatusToast message={error} tone="error" />
       <button
         aria-label="Open navigation"
         className="fixed left-4 top-4 z-40 flex min-h-11 min-w-11 items-center justify-center rounded-full border border-line bg-panel shadow-soft lg:hidden"
@@ -342,24 +376,27 @@ export function Dashboard() {
             </span>
             {!isCollapsed ? <span className="font-display font-semibold">SupportAI</span> : null}
           </div>
-          <button className="min-h-11 min-w-11 rounded-xl lg:hidden" onClick={() => setIsSidebarOpen(false)} type="button">
+          <button aria-label="Close navigation" className="min-h-11 min-w-11 rounded-xl lg:hidden" onClick={() => setIsSidebarOpen(false)} type="button">
             <X className="mx-auto h-5 w-5" />
           </button>
-          <button className="hidden min-h-11 min-w-11 rounded-xl border border-line lg:block" onClick={toggleSidebar} type="button">
+          <button aria-label="Toggle sidebar" title="Toggle sidebar" className="hidden min-h-11 min-w-11 rounded-xl border border-line lg:block" onClick={toggleSidebar} type="button">
             {isCollapsed ? <PanelLeftOpen className="mx-auto h-4 w-4" /> : <PanelLeftClose className="mx-auto h-4 w-4" />}
           </button>
         </div>
 
         <nav className="space-y-1">
-          {navItems.map((item, index) => (
+          {navItems.map((item) => (
             <a
               className={`relative flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-medium ${
-                index === 0 ? "bg-accent/10 text-accent" : "text-muted hover:bg-mist hover:text-ink"
+                activeSection === item.id ? "bg-accent/10 text-accent" : "text-muted hover:bg-mist hover:text-ink"
               }`}
-              href="#overview"
+              href={`#${item.id}`}
+              title={item.label}
+              aria-current={activeSection === item.id ? "location" : undefined}
+              onClick={() => { setActiveSection(item.id); setIsSidebarOpen(false); }}
               key={item.label}
             >
-              {index === 0 ? <span className="absolute left-0 h-6 w-1 rounded-full bg-accent" /> : null}
+              {activeSection === item.id ? <span className="absolute left-0 h-6 w-1 rounded-full bg-accent" /> : null}
               {item.icon}
               {!isCollapsed ? <span>{item.label}</span> : null}
             </a>
@@ -399,7 +436,7 @@ export function Dashboard() {
                 Refresh
               </button>
               <ThemeToggle />
-              <button className="min-h-11 rounded-full border border-line bg-panel px-4 text-sm" onClick={() => supabase.auth.signOut()} type="button">
+              <button className="min-h-11 rounded-full border border-line bg-panel px-4 text-sm" onClick={() => { void supabase.auth.signOut().then(({ error: signOutError }) => { if (signOutError) setError(signOutError.message); }).catch(() => setError("Could not sign out. Please retry.")); }} type="button">
                 Logout
               </button>
             </div>
@@ -407,6 +444,15 @@ export function Dashboard() {
         </header>
 
         <div className="mx-auto max-w-7xl space-y-5 px-4 py-5 sm:px-6" id="overview">
+          <StatusToast message={error || notice} tone={error ? "error" : "success"} />
+          {pendingDelete ? <section className="border-l-4 border-coral bg-panel p-4" role="alert">
+            <p className="font-semibold">Delete {pendingDelete.name}?</p>
+            <p className="mt-1 text-sm text-muted">This removes it from your knowledge base and cannot be undone.</p>
+            <div className="mt-3 flex gap-3">
+              <button className="min-h-11 rounded bg-coral px-4 text-white" disabled={!!busyAction} onClick={() => void confirmDelete()} type="button">{busyAction === "delete" ? "Deleting..." : "Delete"}</button>
+              <button className="min-h-11 rounded border border-line px-4" disabled={!!busyAction} onClick={() => setPendingDelete(null)} type="button">Cancel</button>
+            </div>
+          </section> : null}
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <KpiCard label="Documents uploaded" value={documents.length} />
             <KpiCard label="Ready documents" value={readyDocs} />
@@ -415,8 +461,8 @@ export function Dashboard() {
           </div>
 
           <div className="grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
-            <Panel icon={<Building2 className="h-5 w-5" />} title="My Business Profile">
-              {activeBusiness ? (
+            <Panel id="business-profile" icon={<Building2 className="h-5 w-5" />} title="Business profile">
+              {activeBusiness && !editingBusiness ? (
                 <div className="space-y-4">
                   <div className="rounded-2xl border border-line bg-mist p-4">
                     <p className="font-display text-xl font-semibold">{activeBusiness.name}</p>
@@ -433,7 +479,7 @@ export function Dashboard() {
                       <ExternalLink className="h-4 w-4" />
                       Preview Customer Portal
                     </a>
-                    <button className="min-h-11 rounded-2xl border border-line bg-panel px-4 text-sm font-semibold" type="button">
+                    <button className="min-h-11 rounded-2xl border border-line bg-panel px-4 text-sm font-semibold" onClick={() => setEditingBusiness(true)} type="button">
                       Edit Business Info
                     </button>
                   </div>
@@ -441,22 +487,23 @@ export function Dashboard() {
                 </div>
               ) : (
                 <form className="grid gap-3" onSubmit={createBusiness}>
-                  <Field label="Business Name" name="name" placeholder="Acme Retail" />
-                  <Field label="Industry" name="industry" placeholder="E-commerce, healthcare, education..." />
-                  <Field label="Business Address" name="address" placeholder="Street, city, state or province" />
+                  <Field label="Business name" name="name" placeholder="Business name" defaultValue={activeBusiness?.name ?? ""} />
+                  <Field label="Industry" name="industry" placeholder="Retail, education..." defaultValue={activeBusiness?.industry ?? ""} />
+                  <Field label="Business address" name="address" placeholder="Street, city, state or province" defaultValue={activeBusiness?.address ?? ""} />
                   <button
                     className="inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-primary px-4 font-semibold text-panel disabled:opacity-70"
                     disabled={busyAction !== null}
                     type="submit"
                   >
                     {busyAction === "business" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                    {busyAction === "business" ? "Creating..." : "Create business"}
+                    {busyAction === "business" ? "Saving..." : activeBusiness ? "Save changes" : "Create business"}
                   </button>
+                  {editingBusiness ? <button type="button" onClick={() => setEditingBusiness(false)}>Cancel</button> : null}
                 </form>
               )}
             </Panel>
 
-            <Panel icon={<FileUp className="h-5 w-5" />} title="Document Manager">
+            <Panel id="documents" icon={<FileUp className="h-5 w-5" />} title="Documents">
               <form
                 className={`mb-4 rounded-3xl border border-dashed p-5 text-center ${
                   isDragging ? "border-accent bg-accent/10" : "border-line bg-mist"
@@ -465,16 +512,29 @@ export function Dashboard() {
                   event.preventDefault();
                   setIsDragging(true);
                 }}
-                onDrop={() => setIsDragging(false)}
+                onDragLeave={() => setIsDragging(false)}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  setIsDragging(false);
+                  if (!fileInput.current || busyAction || isWorkspaceLocked) return;
+                  const transfer = new DataTransfer();
+                  const file = event.dataTransfer.files[0];
+                  if (file) transfer.items.add(file);
+                  fileInput.current.files = transfer.files;
+                }}
                 onSubmit={uploadDocument}
               >
                 <UploadCloud className="mx-auto h-9 w-9 text-accent" />
                 <p className="mt-3 font-semibold">Drag files here or choose a document</p>
-                <p className="mt-1 text-sm text-muted">PDF and TXT supported in this MVP.</p>
+                <p className="mt-1 text-sm text-muted">PDF or TXT, up to 10 MB.</p>
                 <input
                   className="mt-4 w-full rounded-2xl border border-line bg-panel px-3 py-3"
                   disabled={isWorkspaceLocked || busyAction !== null}
                   name="file"
+                  ref={fileInput}
+                  aria-label="Knowledge base document"
+                  accept=".pdf,.txt,application/pdf,text/plain"
+                  required
                   type="file"
                 />
                 <button
@@ -488,7 +548,7 @@ export function Dashboard() {
               </form>
               <div className="grid gap-3 sm:grid-cols-2">
                 {documents.length > 0 ? (
-                  documents.map((document) => <DocumentCard document={document} key={document.id} />)
+                  documents.map((document) => <DocumentCard document={document} key={document.id} disabled={!!busyAction} onDelete={() => setPendingDelete({ kind: "documents", id: document.id, name: document.filename })} />)
                 ) : (
                   <EmptyState message="Upload your first document to start answering customer questions." />
                 )}
@@ -497,15 +557,19 @@ export function Dashboard() {
           </div>
 
           <div className="grid gap-5 xl:grid-cols-2">
-            <Panel title="FAQ Manager">
-              <form className="mb-4 grid gap-3" onSubmit={createFaq}>
-                <Field disabled={isWorkspaceLocked || busyAction !== null} label="Question" name="question" placeholder="What is your refund policy?" />
+            <Panel id="faqs" title="FAQs">
+              <form className="mb-4 grid gap-3" onSubmit={createFaq} key={editingFaq?.id ?? "new"}>
+                <Field disabled={isWorkspaceLocked || busyAction !== null} label="Question" name="question" placeholder="What is your refund policy?" defaultValue={editingFaq?.question ?? ""} />
                 <label className="grid gap-2 text-sm font-medium">
                   Answer
                   <textarea
                     className="min-h-24 rounded-2xl border border-line bg-panel px-3 py-3 text-sm focus:border-accent"
                     disabled={isWorkspaceLocked || busyAction !== null}
                     name="answer"
+                    defaultValue={editingFaq?.answer ?? ""}
+                    required
+                    minLength={3}
+                    maxLength={5000}
                     placeholder="Refunds are available within 14 days..."
                   />
                 </label>
@@ -515,8 +579,9 @@ export function Dashboard() {
                   type="submit"
                 >
                   {busyAction === "faq" ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
-                  {busyAction === "faq" ? "Adding..." : "Add FAQ"}
+                  {busyAction === "faq" ? "Saving..." : editingFaq ? "Save FAQ" : "Add FAQ"}
                 </button>
+                {editingFaq ? <button type="button" onClick={() => setEditingFaq(null)}>Cancel edit</button> : null}
               </form>
               <div className="space-y-3">
                 {faqs.length > 0 ? (
@@ -524,6 +589,10 @@ export function Dashboard() {
                     <article className="rounded-2xl border border-line bg-mist p-4" key={faq.id}>
                       <p className="font-semibold">{faq.question}</p>
                       <p className="mt-1 text-sm leading-6 text-muted">{faq.answer}</p>
+                      <div className="mt-2 flex gap-2">
+                        <button aria-label={`Edit FAQ: ${faq.question}`} title="Edit FAQ" className="min-h-11 min-w-11 rounded border border-line" disabled={!!busyAction} onClick={() => setEditingFaq(faq)} type="button"><Pencil className="mx-auto h-4 w-4" /></button>
+                        <button aria-label={`Delete FAQ: ${faq.question}`} title="Delete FAQ" className="min-h-11 min-w-11 rounded border border-line text-coral" disabled={!!busyAction} onClick={() => setPendingDelete({ kind: "faqs", id: faq.id, name: faq.question })} type="button"><Trash2 className="mx-auto h-4 w-4" /></button>
+                      </div>
                     </article>
                   ))
                 ) : (
@@ -532,7 +601,12 @@ export function Dashboard() {
               </div>
             </Panel>
 
-            <Panel icon={<MessageSquare className="h-5 w-5" />} title="Chat Analytics & Preview">
+            <Panel id="analytics" icon={<MessageSquare className="h-5 w-5" />} title="Analytics & chat preview">
+              <h3 className="mb-2 text-sm font-semibold">Daily queries</h3>
+              <div className="mb-4 space-y-2">
+                {Object.entries(analytics?.dailyUsage ?? {}).sort(([a], [b]) => b.localeCompare(a)).slice(0, 7).map(([day, count]) => <div className="flex items-center gap-3 text-sm" key={day}><span className="w-24 shrink-0">{day}</span><meter className="h-4 flex-1" min={0} max={Math.max(1, ...Object.values(analytics?.dailyUsage ?? {}))} value={count} aria-label={`Queries on ${day}`} /><span>{count}</span></div>)}
+                {!analytics?.totalQueries ? <p className="text-sm text-muted">Your first conversation will appear here.</p> : null}
+              </div>
               <div className="mb-4 grid gap-3 sm:grid-cols-2">
                 {(analytics?.mostAskedQuestions ?? []).slice(0, 4).map((item) => (
                   <div className="rounded-2xl border border-line bg-mist p-3" key={item.question}>
@@ -547,6 +621,8 @@ export function Dashboard() {
                 onChange={(event) => setQuestion(event.target.value)}
                 placeholder="Ask a test customer question..."
                 value={question}
+                aria-label="Test customer question"
+                maxLength={4000}
               />
               <button
                 className="mt-3 inline-flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-accent px-4 font-semibold text-white disabled:opacity-70"
@@ -574,6 +650,12 @@ export function Dashboard() {
               ) : null}
             </Panel>
           </div>
+          <Panel id="conversations" title="Conversation history">
+            {conversations.length ? conversations.map((conversation) => <details key={conversation.id} className="border-b border-line py-3">
+              <summary className="cursor-pointer font-medium">{conversation.title}</summary>
+              <div className="mt-3 space-y-3">{[...conversation.messages].sort((a, b) => a.created_at.localeCompare(b.created_at)).map((message) => <div key={message.id} className="border-l-2 border-accent pl-3"><p className="text-xs font-semibold text-muted">{message.sender === "customer" ? "Customer" : "SupportAI"}</p><p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p></div>)}</div>
+            </details>) : <EmptyState message="Customer conversations will appear here." />}
+          </Panel>
         </div>
       </section>
     </main>
@@ -589,9 +671,9 @@ function KpiCard({ label, value }: { label: string; value: number }) {
   );
 }
 
-function Panel({ children, icon, title }: { children: React.ReactNode; icon?: React.ReactNode; title: string }) {
+function Panel({ children, icon, title, id }: { children: React.ReactNode; icon?: React.ReactNode; title: string; id?: string }) {
   return (
-    <section className="rounded-3xl border border-line bg-panel p-5 shadow-sm">
+    <section id={id} className="min-w-0 scroll-mt-5 border-t border-line py-5">
       <div className="mb-4 flex items-center gap-2">
         {icon}
         <h2 className="font-display text-lg font-semibold">{title}</h2>
@@ -606,11 +688,13 @@ function Field({
   label,
   name,
   placeholder
+  , defaultValue
 }: {
   disabled?: boolean;
   label: string;
   name: string;
   placeholder: string;
+  defaultValue?: string;
 }) {
   return (
     <label className="grid gap-2 text-sm font-medium">
@@ -620,12 +704,16 @@ function Field({
         disabled={disabled}
         name={name}
         placeholder={placeholder}
+        defaultValue={defaultValue}
+        required
+        maxLength={name === "question" ? 500 : name === "address" ? 240 : name === "industry" ? 80 : 120}
+        minLength={name === "address" ? 5 : name === "question" ? 3 : 2}
       />
     </label>
   );
 }
 
-function DocumentCard({ document }: { document: DocumentRow }) {
+function DocumentCard({ document, disabled, onDelete }: { document: DocumentRow; disabled: boolean; onDelete: () => void }) {
   const isReady = document.status === "ready";
   const isFailed = document.status === "failed";
 
@@ -648,6 +736,8 @@ function DocumentCard({ document }: { document: DocumentRow }) {
         {document.status}
       </span>
       {document.status === "processing" ? <div className="mt-3 h-2 overflow-hidden rounded-full bg-line"><div className="h-full w-2/3 animate-pulse rounded-full bg-accent" /></div> : null}
+      <button className="mt-3 flex min-h-11 items-center gap-2 text-sm text-coral" disabled={disabled} onClick={onDelete} type="button"><Trash2 className="h-4 w-4" />Delete</button>
+      {isFailed ? <p className="mt-2 text-xs text-muted">Processing failed. Delete this entry and upload again after resolving the error.</p> : null}
     </article>
   );
 }

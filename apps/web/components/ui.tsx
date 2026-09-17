@@ -15,7 +15,7 @@ export function StatusToast({ message, tone }: { message: string; tone: "success
   }
 
   return (
-    <div className={`fixed right-4 top-4 z-50 flex max-w-sm animate-in items-start gap-2 rounded-2xl border px-4 py-3 shadow-soft ${toneClass}`}>
+    <div role={tone === "error" ? "alert" : "status"} className={`flex w-full animate-in items-start gap-2 rounded-lg border px-4 py-3 ${toneClass}`}>
       <Icon className="mt-0.5 h-4 w-4 shrink-0" />
       <p className="text-sm leading-6">{message}</p>
     </div>

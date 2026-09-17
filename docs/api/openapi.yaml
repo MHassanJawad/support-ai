@@ -5,6 +5,90 @@ info:
 servers:
   - url: http://localhost:4000
 paths:
+  /api/v1/businesses/current:
+    patch:
+      summary: Update active workspace profile (owner or admin)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, industry, address]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 120 }
+                industry: { type: string, minLength: 2, maxLength: 80 }
+                address: { type: string, minLength: 5, maxLength: 240 }
+      responses:
+        "200": { description: Updated workspace }
+        "403": { description: Owner or admin role required }
+  /api/v1/public/businesses:
+    get:
+      summary: Browse public business profiles
+      responses:
+        "200": { description: Business profiles including address }
+  /api/v1/public/businesses/{businessId}:
+    parameters:
+      - $ref: "#/components/parameters/BusinessId"
+    get:
+      summary: Get public business profile
+      responses:
+        "200": { description: Business profile }
+        "404": { description: Business not found }
+  /api/v1/public/businesses/{businessId}/faqs:
+    parameters:
+      - $ref: "#/components/parameters/BusinessId"
+    get:
+      summary: Get published FAQs
+      responses:
+        "200": { description: FAQs }
+  /api/v1/public/businesses/{businessId}/chat:
+    parameters:
+      - $ref: "#/components/parameters/BusinessId"
+    post:
+      summary: Ask a question as an authenticated customer
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content]
+              properties:
+                content: { type: string, minLength: 1, maxLength: 4000 }
+                conversationId: { type: string, format: uuid }
+      responses:
+        "201": { description: Answer with conversationId and sources }
+        "401": { description: Sign in required }
+        "403": { description: Conversation belongs to another customer }
+        "502": { description: Provider unavailable; retry is safe before message persistence }
+  /api/v1/public/businesses/{businessId}/conversations:
+    parameters:
+      - $ref: "#/components/parameters/BusinessId"
+    get:
+      summary: Latest 50 conversations belonging to the signed-in customer
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Conversation id, title and creation date }
+  /api/v1/public/businesses/{businessId}/conversations/{conversationId}:
+    parameters:
+      - $ref: "#/components/parameters/BusinessId"
+      - in: path
+        name: conversationId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Read a customer-owned conversation and ordered messages
+      security:
+        - bearerAuth: []
+      responses:
+        "200": { description: Conversation and messages }
+        "403": { description: Conversation belongs to another customer }
   /health:
     get:
       summary: Health check
@@ -32,12 +116,16 @@ paths:
           application/json:
             schema:
               type: object
-              required: [name, industry]
+              required: [name, industry, address]
               properties:
                 name:
                   type: string
                 industry:
                   type: string
+                address:
+                  type: string
+                  minLength: 5
+                  maxLength: 240
       responses:
         "201":
           description: Business created
@@ -180,6 +268,12 @@ paths:
         "200":
           description: Analytics returned
 components:
+  parameters:
+    BusinessId:
+      in: path
+      name: businessId
+      required: true
+      schema: { type: string, format: uuid }
   securitySchemes:
     bearerAuth:
       type: http

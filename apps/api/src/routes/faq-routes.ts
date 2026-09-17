@@ -1,5 +1,6 @@
 // FAQ CRUD routes for business-owner-managed knowledge entries.
 import { Router } from "express";
+import { requireEditor } from "../middleware/auth";
 import { createFaqSchema, updateFaqSchema } from "@supportai/shared";
 import { asyncRoute } from "../utils/async-route";
 import { createFaq, deleteFaq, listFaqs, updateFaq } from "../services/faq-service";
@@ -17,6 +18,7 @@ faqRouter.get(
 
 faqRouter.post(
   "/faqs",
+  requireEditor,
   asyncRoute(async (req, res) => {
     const input = createFaqSchema.parse(req.body);
     const faq = await createFaq(input, requireBusinessId(req.context.auth?.businessId));
@@ -26,6 +28,7 @@ faqRouter.post(
 
 faqRouter.patch(
   "/faqs/:faqId",
+  requireEditor,
   asyncRoute(async (req, res) => {
     const input = updateFaqSchema.parse(req.body);
     const faq = await updateFaq(req.params.faqId!, input, requireBusinessId(req.context.auth?.businessId));
@@ -35,6 +38,7 @@ faqRouter.patch(
 
 faqRouter.delete(
   "/faqs/:faqId",
+  requireEditor,
   asyncRoute(async (req, res) => {
     await deleteFaq(req.params.faqId!, requireBusinessId(req.context.auth?.businessId));
     res.status(204).send();

@@ -4,7 +4,9 @@ SupportAI is a production-minded MVP for a multi-tenant AI customer support SaaS
 
 ## Status
 
-MVP scaffold implemented. CI, docs, migrations, API routes, shared contracts, and frontend screens are included.
+Demo workflows implemented with regression and desktop/mobile browser tests.
+Live readiness depends on a reachable Supabase project, migration 003, and a passing
+staging walkthrough. See [docs/DEMO_READINESS.md](docs/DEMO_READINESS.md).
 
 ## Architecture
 
@@ -23,6 +25,8 @@ Create the Supabase project, run the SQL migrations in `db/migrations`, create t
 ## Documentation
 
 - [Requirements](docs/REQUIREMENTS.md)
+- [Local setup](docs/SETUP.md)
+- [Demo readiness](docs/DEMO_READINESS.md)
 - [Design](docs/DESIGN.md)
 - [Technology Stack](docs/TECH_STACK.md)
 - [Testing](docs/TESTING.md)

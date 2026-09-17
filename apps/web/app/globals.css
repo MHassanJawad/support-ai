@@ -8,13 +8,13 @@
   color-scheme: light;
   --color-primary: #0f1c3f;
   --color-primary-soft: #e9eefc;
-  --color-accent: #00a989;
+  --color-accent: #007f6d;
   --color-accent-strong: #007f6d;
   --color-bg: #f5f7fb;
   --color-panel: #ffffff;
   --color-panel-strong: #f9fbff;
   --color-text: #17202a;
-  --color-muted: #64748b;
+  --color-muted: #526174;
   --color-line: #d8dee9;
   --color-danger: #c2410c;
   --color-success: #0f766e;
@@ -26,7 +26,7 @@
   color-scheme: dark;
   --color-primary: #d9e6ff;
   --color-primary-soft: #17213d;
-  --color-accent: #00c9a7;
+  --color-accent: #007f6d;
   --color-accent-strong: #7af7de;
   --color-bg: #0b1020;
   --color-panel: #111827;
@@ -38,6 +38,8 @@
   --color-success: #6ee7cf;
 }
 
+[data-theme="dark"] .text-accent { color: #70dfc3; }
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -47,6 +49,14 @@ body {
   font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui;
   color: var(--color-text);
 }
+
+html { scroll-behavior: smooth; }
+* { box-sizing: border-box; letter-spacing: 0; }
+input, textarea, select { min-width: 0; max-width: 100%; }
+p, h1, h2, h3 { overflow-wrap: anywhere; }
+button:disabled { cursor: not-allowed; }
+button:disabled:hover { transform: none; }
+meter { accent-color: var(--color-accent); }
 
 button,
 input,
@@ -87,14 +97,19 @@ a:hover {
 }
 
 .fluid-title {
-  font-size: clamp(2.15rem, 5vw, 4.35rem);
+  font-size: 3.5rem;
   line-height: 1.02;
   letter-spacing: 0;
 }
 
 .fluid-heading {
-  font-size: clamp(1.55rem, 3vw, 2.6rem);
+  font-size: 2.25rem;
   line-height: 1.1;
+}
+
+@media (max-width: 640px) {
+  .fluid-title { font-size: 2.15rem; }
+  .fluid-heading { font-size: 1.75rem; }
 }
 
 .surface {

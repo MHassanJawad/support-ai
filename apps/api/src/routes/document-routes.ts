@@ -1,6 +1,7 @@
 // Document management routes for tenant knowledge bases.
 import { Router } from "express";
 import multer from "multer";
+import { requireEditor } from "../middleware/auth";
 import { asyncRoute } from "../utils/async-route";
 import { deleteDocument, listDocuments, uploadAndProcessDocument } from "../services/document-service";
 import { requireBusinessId } from "../services/business-service";
@@ -20,6 +21,7 @@ documentRouter.get(
 
 documentRouter.post(
   "/documents",
+  requireEditor,
   upload.single("file"),
   asyncRoute(async (req, res) => {
     const businessId = requireBusinessId(req.context.auth?.businessId);
@@ -35,6 +37,7 @@ documentRouter.post(
 
 documentRouter.delete(
   "/documents/:documentId",
+  requireEditor,
   asyncRoute(async (req, res) => {
     const businessId = requireBusinessId(req.context.auth?.businessId);
     await deleteDocument(req.params.documentId!, businessId);

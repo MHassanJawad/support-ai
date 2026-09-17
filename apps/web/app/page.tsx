@@ -60,15 +60,15 @@ export default function HomePage() {
           style={{ backgroundImage: "url('/media/heroImager.webp')" }}
         />
         <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(245,247,251,0.92)_0%,rgba(245,247,251,0.78)_42%,rgba(245,247,251,0.38)_72%,rgba(245,247,251,0.12)_100%)] dark:bg-[linear-gradient(90deg,rgba(11,16,32,0.94)_0%,rgba(11,16,32,0.80)_42%,rgba(11,16,32,0.48)_72%,rgba(11,16,32,0.22)_100%)]" />
-        <div className="relative mx-auto grid min-h-[calc(100vh-73px)] max-w-7xl items-center gap-8 px-4 py-10 sm:px-5 lg:grid-cols-[1fr_0.82fr] lg:py-12">
+        <div className="relative mx-auto max-w-7xl px-4 py-14 sm:px-5 lg:py-20">
           <Reveal>
             <div>
-              <h1 className="fluid-title max-w-4xl font-display font-semibold">
+              <p className="mb-4 font-display text-2xl font-semibold text-ink">SupportAI</p>
+              <h1 className="fluid-title max-w-3xl font-display font-semibold">
               Turn business knowledge into instant customer support.
               </h1>
               <p className="mt-5 max-w-2xl text-lg leading-8 text-muted">
-              SupportAI gives every business a modern support portal backed by its own documents, FAQs, and AI retrieval
-              pipeline. Customers ask questions. The system retrieves context. Gemini answers with grounded support.
+              Give customers clear answers from your business documents and FAQs, in one dedicated support center.
               </p>
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
                 <Link
@@ -89,31 +89,6 @@ export default function HomePage() {
             </div>
           </Reveal>
 
-          <Reveal delay={120}>
-            <div className="surface rounded-[24px] p-4">
-              <div className="rounded-[20px] bg-[var(--color-panel-strong)] p-4">
-                <div className="mb-5 flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-muted">Customer chat preview</p>
-                    <p className="font-display text-xl font-semibold">Acme Support Center</p>
-                  </div>
-                  <span className="rounded-full bg-accent/10 px-3 py-1 text-sm font-medium text-accent">Powered by AI</span>
-                </div>
-                <div className="space-y-3">
-                  <p className="ml-auto max-w-sm rounded-2xl bg-accent px-4 py-3 text-sm leading-6 text-white">
-                    How long do refunds take?
-                  </p>
-                  <div className="max-w-md rounded-2xl border border-line bg-panel p-4 text-sm leading-6">
-                    Refund requests are reviewed within 2 business days. Approved refunds are issued to the original payment
-                    method.
-                    <div className="mt-3 rounded-xl border border-line bg-mist p-3 text-xs text-muted">
-                      Source: refund-policy.txt - similarity 0.842
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Reveal>
         </div>
       </section>
 
@@ -184,7 +159,7 @@ export default function HomePage() {
           <div className="flex gap-4">
             <Link href="/business/login">Business</Link>
             <Link href="/customer/login">Customer</Link>
-            <Link href="/support/demo">Portal</Link>
+            <Link href="/customer/register">Create account</Link>
           </div>
         </div>
       </footer>

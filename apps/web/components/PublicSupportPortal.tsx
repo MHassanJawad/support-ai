@@ -4,6 +4,9 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, ChevronDown, HelpCircle, Loader2, Send, Sparkles } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
+import Link from "next/link";
+import { apiRequest } from "../lib/api";
+import { supabase } from "../lib/supabase";
 
 interface Business {
   id: string;
@@ -45,6 +48,10 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
   const [error, setError] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const requestPending = useRef(false);
+  const [signedIn, setSignedIn] = useState(false);
+  const [showFaqs, setShowFaqs] = useState(false);
+  const [history, setHistory] = useState<Array<{ id: string; title: string }>>([]);
 
   useEffect(() => {
     async function loadPortal() {
@@ -58,7 +65,13 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
         ]);
         setBusiness(businessData);
         setFaqs(faqData);
-        window.localStorage.setItem("supportai-last-business", businessId);
+        const { data: auth } = await supabase.auth.getSession();
+        setSignedIn(!!auth.session);
+        if (auth.session) {
+          const saved = await apiRequest<Array<{ id: string; title: string }>>(`/api/v1/public/businesses/${businessId}/conversations`);
+          setHistory(saved);
+          if (saved[0]) await openConversation(saved[0].id);
+        }
       } catch (loadError) {
         setError(getErrorMessage(loadError));
       } finally {
@@ -68,6 +81,19 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
 
     loadPortal().catch((loadError: unknown) => setError(getErrorMessage(loadError)));
   }, [businessId]);
+
+  async function openConversation(id: string) {
+    if (requestPending.current) return;
+    setError("");
+    try {
+      const conversation = await apiRequest<{ messages: Array<{ sender: "customer" | "assistant"; content: string; created_at: string; metadata: { sources?: ChatSource[] } }> }>(`/api/v1/public/businesses/${businessId}/conversations/${id}`);
+      setConversationId(id);
+      setMessages(conversation.messages.map((message) => ({
+        sender: message.sender, content: message.content, timestamp: message.created_at,
+        ...(message.metadata?.sources ? { sources: message.metadata.sources } : {})
+      })));
+    } catch (failure) { setError(getErrorMessage(failure)); }
+  }
 
   useEffect(() => {
     scrollToBottom();
@@ -79,9 +105,12 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
 
   async function askQuestion(nextQuestion = question) {
     const trimmedQuestion = nextQuestion.trim();
-    if (!trimmedQuestion || isAsking) {
+    if (!trimmedQuestion || requestPending.current) {
       return;
     }
+    if (!signedIn) { setError("Sign in to start a conversation."); return; }
+    if (trimmedQuestion.length > 4000) { setError("Keep your question under 4,000 characters."); return; }
+    requestPending.current = true;
 
     setQuestion("");
     setError("");
@@ -89,7 +118,7 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
     setMessages((current) => [...current, { sender: "customer", content: trimmedQuestion, timestamp: new Date().toISOString() }]);
 
     try {
-      const response = await publicRequest<{
+      const response = await apiRequest<{
         conversationId: string;
         answer: string;
         sources: ChatSource[];
@@ -102,6 +131,7 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
       });
 
       setConversationId(response.conversationId);
+      setHistory((current) => current.some((item) => item.id === response.conversationId) ? current : [{ id: response.conversationId, title: trimmedQuestion.slice(0, 80) }, ...current]);
       setMessages((current) => [
         ...current,
         {
@@ -112,8 +142,11 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
         }
       ]);
     } catch (askError) {
+      setMessages((current) => current.slice(0, -1));
+      setQuestion(trimmedQuestion);
       setError(getErrorMessage(askError));
     } finally {
+      requestPending.current = false;
       setIsAsking(false);
     }
   }
@@ -130,7 +163,7 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
   }
 
   return (
-    <main className="flex h-screen flex-col overflow-hidden bg-mist text-ink">
+    <main className="flex h-[100dvh] flex-col overflow-hidden bg-mist text-ink">
       <header className="z-10 border-b border-line bg-panel/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 sm:px-5">
           <div className="flex min-w-0 items-center gap-3">
@@ -144,18 +177,17 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
               </p>
             </div>
           </div>
-          <ThemeToggle />
+          <div className="flex shrink-0 items-center gap-3">
+            <Link className="text-sm text-accent" href="/customer/dashboard">Businesses</Link>
+            <ThemeToggle />
+          </div>
         </div>
       </header>
 
       <div
         className="mx-auto grid min-h-0 w-full max-w-6xl flex-1 gap-4 px-4 py-4 sm:px-5 lg:grid-cols-[320px_1fr]"
-        onScroll={(event) => {
-          const element = event.currentTarget;
-          setShowScrollButton(element.scrollHeight - element.scrollTop - element.clientHeight > 220);
-        }}
       >
-        <aside className="hidden overflow-y-auto rounded-3xl border border-line bg-panel p-4 shadow-sm lg:block">
+        <aside className="hidden overflow-y-auto border-r border-line p-4 lg:block">
           <div className="mb-3 flex items-center gap-2">
             <HelpCircle className="h-4 w-4 text-accent" />
             <h2 className="font-display font-semibold">FAQs</h2>
@@ -175,20 +207,35 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
         </aside>
 
         <section className="relative flex min-h-0 flex-col rounded-3xl border border-line bg-panel shadow-soft">
-          <div ref={scrollRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+          <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
+            <button className="min-h-11 rounded border border-line px-3 text-sm lg:hidden" onClick={() => setShowFaqs(!showFaqs)} aria-expanded={showFaqs} type="button">{showFaqs ? "Hide FAQs" : "FAQs"}</button>
+            <select className="min-h-11 min-w-0 flex-1 rounded border border-line bg-panel px-2 text-sm" aria-label="Conversation history" value={conversationId} disabled={isAsking} onChange={(event) => { if (event.target.value) void openConversation(event.target.value); }}>
+              <option value="">New conversation</option>
+              {history.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
+            </select>
+            <button className="min-h-11 rounded border border-line px-3 text-sm" disabled={isAsking} onClick={() => { setConversationId(""); setMessages([]); setError(""); }} type="button">New chat</button>
+          </div>
+          {showFaqs ? <div className="max-h-52 overflow-y-auto border-b border-line p-4 lg:hidden">
+            {faqs.length ? faqs.map((faq) => <details key={faq.id} className="mb-3"><summary className="cursor-pointer text-sm font-semibold">{faq.question}</summary><p className="mt-2 whitespace-pre-wrap text-sm text-muted">{faq.answer}</p></details>) : <p className="text-sm text-muted">No FAQs published yet.</p>}
+          </div> : null}
+          <div ref={scrollRef} role="log" aria-label="Conversation messages" aria-live="polite" onScroll={(event) => {
+            const element = event.currentTarget;
+            setShowScrollButton(element.scrollHeight - element.scrollTop - element.clientHeight > 220);
+          }} className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
             {messages.length > 0 ? (
               messages.map((message, index) => <ChatBubble key={`${message.sender}-${index}`} message={message} />)
             ) : (
               <WelcomeCard businessName={business?.name ?? "this business"} onAsk={askQuestion} />
             )}
             {isAsking ? <TypingIndicator /> : null}
-            {error ? <p className="rounded-2xl border border-coral/30 bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
+            {error ? <p role="alert" className="rounded-2xl border border-coral/30 bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
           </div>
 
           {showScrollButton ? (
             <button
               className="absolute bottom-28 right-5 flex min-h-11 min-w-11 items-center justify-center rounded-full bg-primary text-panel shadow-soft"
               onClick={scrollToBottom}
+              aria-label="Scroll to latest message"
               type="button"
             >
               <ChevronDown className="h-5 w-5" />
@@ -196,26 +243,16 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
           ) : null}
 
           <div className="border-t border-line p-3">
-            {messages.length === 0 ? (
-              <div className="mb-3 flex flex-wrap gap-2">
-                {suggestedQuestions.map((suggestion) => (
-                  <button
-                    className="min-h-11 rounded-full border border-line bg-mist px-3 text-sm"
-                    key={suggestion}
-                    onClick={() => askQuestion(suggestion)}
-                    type="button"
-                  >
-                    {suggestion}
-                  </button>
-                ))}
-              </div>
-            ) : null}
+            {!signedIn ? <p className="mb-3 text-sm text-muted"><Link className="font-semibold text-accent underline" href="/customer/login">Sign in</Link> or <Link className="font-semibold text-accent underline" href="/customer/register">create an account</Link> to ask a question and save your conversations.</p> : null}
             <div className="flex items-end gap-2">
               <textarea
                 className="max-h-36 min-h-11 flex-1 resize-none rounded-2xl border border-line bg-mist px-3 py-3 text-sm"
                 onChange={(event) => setQuestion(event.target.value)}
+                aria-label="Your question"
+                maxLength={4000}
+                disabled={!signedIn || isAsking || !business}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
+                  if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
                     event.preventDefault();
                     askQuestion();
                   }
@@ -226,7 +263,9 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
               />
               <button
                 className="flex min-h-11 min-w-11 items-center justify-center rounded-2xl bg-accent text-white disabled:cursor-not-allowed disabled:opacity-70"
-                disabled={isAsking || !question.trim()}
+                disabled={isAsking || !question.trim() || !signedIn || !business}
+                aria-label="Send question"
+                title="Send question"
                 onClick={() => askQuestion()}
                 type="button"
               >
@@ -242,12 +281,12 @@ export function PublicSupportPortal({ businessId }: { businessId: string }) {
 
 function WelcomeCard({ businessName, onAsk }: { businessName: string; onAsk: (question: string) => void }) {
   return (
-    <div className="mx-auto mt-10 max-w-lg rounded-3xl border border-line bg-mist p-6 text-center">
+    <div className="mx-auto mt-4 max-w-lg p-4 text-center">
       <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-3xl bg-primary text-panel">
         <Sparkles className="h-6 w-6" />
       </div>
       <h2 className="font-display text-2xl font-semibold">Ask {businessName} anything.</h2>
-      <p className="mt-2 text-sm leading-6 text-muted">SupportAI will search this business&apos;s uploaded knowledge base before answering.</p>
+      <p className="mt-2 text-sm leading-6 text-muted">What can we help you with today?</p>
       <div className="mt-5 flex flex-wrap justify-center gap-2">
         {suggestedQuestions.map((question) => (
           <button className="min-h-11 rounded-full border border-line bg-panel px-3 text-sm" key={question} onClick={() => onAsk(question)} type="button">
@@ -271,8 +310,8 @@ function ChatBubble({ message }: { message: ChatMessage }) {
             SupportAI
           </div>
         ) : null}
-        <p className="whitespace-pre-wrap text-sm leading-6">{message.content}</p>
-        <p className={`mt-2 text-xs ${isCustomer ? "text-white/75" : "text-muted"}`}>{new Date(message.timestamp).toLocaleTimeString()}</p>
+        <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</p>
+        <p className={`mt-2 text-xs ${isCustomer ? "text-white" : "text-muted"}`}>{new Date(message.timestamp).toLocaleTimeString()}</p>
         {message.sources && message.sources.length > 0 ? (
           <details className="mt-3 rounded-2xl border border-line bg-panel/70 p-3 text-xs text-ink">
             <summary className="cursor-pointer font-semibold">Sources</summary>

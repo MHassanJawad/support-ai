@@ -10,6 +10,9 @@ export function normalizeText(input: string): string {
 }
 
 export function chunkText(input: string, maxChars = 1600, overlapChars = 180): TextChunk[] {
+  if (!Number.isInteger(maxChars) || maxChars < 1 || !Number.isInteger(overlapChars) || overlapChars < 0 || overlapChars >= maxChars) {
+    throw new RangeError("Chunk size must be positive and overlap must be smaller than the chunk size.");
+  }
   const normalized = normalizeText(input);
 
   if (!normalized) {
@@ -33,7 +36,7 @@ export function chunkText(input: string, maxChars = 1600, overlapChars = 180): T
       });
     }
 
-    start = Math.max(cutPoint - overlapChars, cutPoint);
+    start = Math.max(start + 1, cutPoint - overlapChars);
     if (cutPoint >= normalized.length) {
       break;
     }

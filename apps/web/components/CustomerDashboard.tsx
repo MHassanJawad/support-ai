@@ -69,8 +69,8 @@ export function CustomerDashboard() {
   if (!session) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-mist p-5">
-        <div className="rounded border border-line bg-white p-5 text-center shadow-sm">
-          <p className="mb-4 text-sm text-slate-600">Sign in as a customer to continue.</p>
+        <div className="rounded border border-line bg-panel p-5 text-center shadow-sm">
+          <p className="mb-4 text-sm text-muted">Sign in as a customer to continue.</p>
           <Link className="rounded bg-teal px-4 py-2 text-sm font-medium text-white" href="/customer/login">
             Customer login
           </Link>
@@ -81,7 +81,7 @@ export function CustomerDashboard() {
 
   return (
     <main className="min-h-screen bg-mist">
-      <header className="border-b border-line bg-white">
+      <header className="border-b border-line bg-panel">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-5">
           <div>
             <Link className="mb-2 flex items-center gap-2 font-semibold" href="/">
@@ -89,11 +89,11 @@ export function CustomerDashboard() {
               SupportAI
             </Link>
             <h1 className="text-xl font-semibold text-ink">Customer Dashboard</h1>
-            <p className="text-sm text-slate-600">Browse available business support centers.</p>
+            <p className="text-sm text-muted">Browse available business support centers.</p>
           </div>
           <div className="flex items-center gap-2">
             <ThemeToggle />
-            <button className="min-h-11 rounded-full border border-line bg-panel px-4 text-sm" onClick={() => supabase.auth.signOut()} type="button">
+            <button className="min-h-11 rounded-full border border-line bg-panel px-4 text-sm" onClick={() => { void supabase.auth.signOut().then(({ error: signOutError }) => { if (signOutError) setError(signOutError.message); }).catch(() => setError("Could not sign out. Please retry.")); }} type="button">
               Sign out
             </button>
           </div>
@@ -101,7 +101,7 @@ export function CustomerDashboard() {
       </header>
 
       <section className="mx-auto max-w-7xl px-4 py-5 sm:px-5">
-        <div className="mb-5 rounded-3xl border border-line bg-panel p-5 shadow-sm">
+        <div className="mb-5 max-w-xl">
           <label className="mb-2 block text-sm font-medium text-ink" htmlFor="business-search">
             Find a business
           </label>
@@ -117,12 +117,12 @@ export function CustomerDashboard() {
           </div>
         </div>
 
-        {error ? <p className="mb-4 rounded border border-coral/30 bg-coral/10 px-3 py-2 text-sm text-coral">{error}</p> : null}
+        {error ? <p role="alert" className="mb-4 rounded border border-coral/30 bg-coral/10 px-3 py-2 text-sm text-coral">{error} <button type="button" className="underline" onClick={() => window.location.reload()}>Retry</button></p> : null}
 
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {filteredBusinesses.length > 0 ? (
             filteredBusinesses.map((business) => (
-              <article className="overflow-hidden rounded-3xl border border-line bg-panel shadow-sm hover:shadow-soft" key={business.id}>
+              <article className="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-panel shadow-sm hover:shadow-soft" key={business.id}>
                 <div
                   aria-label={`${business.name} business cover`}
                   className="relative h-36 bg-cover"
@@ -137,10 +137,10 @@ export function CustomerDashboard() {
                     <Building2 className="h-5 w-5" />
                   </div>
                 </div>
-                <div className="p-5">
+                <div className="flex flex-1 flex-col items-start p-5">
                   <h2 className="font-display text-lg font-semibold text-ink">{business.name}</h2>
                   <p className="mt-1 text-sm text-muted">{business.industry}</p>
-                  <p className="mt-3 flex items-start gap-2 text-sm leading-6 text-muted">
+                  <p className="mb-4 mt-3 flex flex-1 items-start gap-2 text-sm leading-6 text-muted">
                     <MapPin className="mt-1 h-4 w-4 shrink-0 text-accent" />
                     <span>{business.address}</span>
                   </p>
@@ -155,7 +155,7 @@ export function CustomerDashboard() {
               </article>
             ))
           ) : (
-            <p className="rounded border border-dashed border-line bg-white p-4 text-sm text-slate-500">
+            <p className="rounded border border-dashed border-line bg-panel p-4 text-sm text-muted">
               No business support centers found.
             </p>
           )}

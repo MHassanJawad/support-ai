@@ -181,7 +181,7 @@ export function PasswordRecoveryPanel({ mode, role }: { mode: RecoveryMode; role
             </p>
           </div>
           <div className="grid gap-3 text-sm text-muted sm:grid-cols-2 lg:grid-cols-1">
-            <TrustItem icon={<ShieldCheck className="h-4 w-4" />} label="Secure Supabase recovery" />
+            <TrustItem icon={<ShieldCheck className="h-4 w-4" />} label="Secure account recovery" />
             <TrustItem icon={copy.icon} label={`${copy.accountLabel} account`} />
           </div>
         </section>

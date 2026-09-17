@@ -23,7 +23,7 @@ const envSchema = z.object({
   SUPABASE_STORAGE_BUCKET: z.string().min(1).default("knowledge-base"),
   GEMINI_API_KEY: z.string().min(1),
   GEMINI_EMBEDDING_MODEL: z.string().min(1).default("gemini-embedding-001"),
-  GEMINI_EMBEDDING_DIMENSIONS: z.coerce.number().int().positive().default(768),
+  GEMINI_EMBEDDING_DIMENSIONS: z.coerce.number().refine((value) => value === 768, "The database requires 768 embedding dimensions.").default(768),
   GEMINI_GENERATION_MODEL: z.string().min(1).default("gemini-1.5-flash"),
   RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(900000),
   RATE_LIMIT_MAX: z.coerce.number().int().positive().default(100)

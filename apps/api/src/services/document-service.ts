@@ -1,5 +1,6 @@
 // Document upload, extraction, chunking, embedding, and tenant-scoped retrieval.
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import pdfParse from "pdf-parse/lib/pdf-parse.js";
 import type { SourceReference } from "@supportai/shared";
 import { env } from "../config/env";
@@ -13,7 +14,7 @@ const allowedMimeTypes = new Set(["application/pdf", "text/plain"]);
 export async function uploadAndProcessDocument(file: Express.Multer.File, businessId: string) {
   assertAllowedFile(file);
   const safeName = sanitizeFilename(file.originalname);
-  const storagePath = `${businessId}/${Date.now()}-${safeName}`;
+  const storagePath = `${businessId}/${randomUUID()}-${safeName}`;
 
   const { error: uploadError } = await supabaseAdmin.storage
     .from(env.SUPABASE_STORAGE_BUCKET)
@@ -50,6 +51,7 @@ export async function uploadAndProcessDocument(file: Express.Multer.File, busine
     .single();
 
   if (documentError || !document) {
+    await supabaseAdmin.storage.from(env.SUPABASE_STORAGE_BUCKET).remove([storagePath]);
     throw new AppError("DATABASE_ERROR", "Could not create document record.", 500);
   }
 
@@ -97,13 +99,15 @@ export async function uploadAndProcessDocument(file: Express.Multer.File, busine
       }
     }
 
-    await supabaseAdmin.from("documents").update({ status: "ready" }).eq("id", document.id);
+    const { error: readyError } = await supabaseAdmin.from("documents").update({ status: "ready" }).eq("id", document.id).eq("business_id", businessId);
+    if (readyError) throw new AppError("DATABASE_ERROR", "Could not mark document ready.", 500);
   } catch (error) {
+    await supabaseAdmin.from("document_chunks").delete().eq("document_id", document.id).eq("business_id", businessId);
     await supabaseAdmin.from("documents").update({ status: "failed" }).eq("id", document.id);
     throw error;
   }
 
-  return document;
+  return { ...document, status: "ready" };
 }
 
 function getStorageUploadMessage(error: unknown): string {
@@ -195,8 +199,10 @@ export async function deleteDocument(documentId: string, businessId: string): Pr
     throw new NotFoundError("Document was not found.");
   }
 
-  await supabaseAdmin.storage.from(env.SUPABASE_STORAGE_BUCKET).remove([document.storage_path]);
-  await supabaseAdmin.from("documents").delete().eq("id", documentId).eq("business_id", businessId);
+  const { error: storageError } = await supabaseAdmin.storage.from(env.SUPABASE_STORAGE_BUCKET).remove([document.storage_path]);
+  if (storageError) throw new AppError("DATABASE_ERROR", "Could not delete the stored file. Please retry.", 502);
+  const { error: deleteError } = await supabaseAdmin.from("documents").delete().eq("id", documentId).eq("business_id", businessId);
+  if (deleteError) throw new AppError("DATABASE_ERROR", "Could not delete document metadata. Please retry.", 500);
 }
 
 export async function retrieveRelevantChunks(
@@ -259,6 +265,7 @@ function assertAllowedFile(file: Express.Multer.File): void {
 }
 
 function sanitizeFilename(filename: string): string {
+  if (filename.includes("/") || filename.includes("\\")) throw new ValidationError("Filename must not contain a path.");
   const base = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "-");
   if (!base || base.includes("..")) {
     throw new ValidationError("Filename is invalid.");

@@ -11,7 +11,7 @@ describe("buildRagPrompt", () => {
     const { buildRagPrompt } = await import("../src/services/ai-provider");
     const prompt = buildRagPrompt("What is the refund window?", "Refunds are available for 14 days.");
 
-    expect(prompt).toContain("Answer only from the supplied business knowledge base context.");
+    expect(prompt).toContain("Never mention reference material, documents, sources, context, retrieval, a knowledge base");
     expect(prompt).toContain("What is the refund window?");
     expect(prompt).toContain("Refunds are available for 14 days.");
   });
